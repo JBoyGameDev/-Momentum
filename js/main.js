@@ -2,7 +2,7 @@ new Phaser.Game({
     type:   Phaser.AUTO,
     width:  800,
     height: 480,
-    backgroundColor: '#04040c',
+    backgroundColor: '#050505',
     pixelArt: true,
     physics: {
         default: 'arcade',
