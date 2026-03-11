@@ -7,6 +7,9 @@ class Player {
         this.sprite.body.setGravityY(C.GRAVITY);
         this.sprite.body.setMaxVelocityX(C.MAX_VEL_X);
         this.sprite.body.setCollideWorldBounds(true);
+        // Allow falling through bottom so lava kill triggers at LAVA_Y
+        this.sprite.body.checkCollision.down = false;
+
         this.swordGfx  = scene.add.graphics().setDepth(7);
         this.facing    = 1;
         this.gauge     = 0;
@@ -20,21 +23,38 @@ class Player {
         this.trailTick = 0;
         this.kills     = 0;
         this.axeHitGlow = 0;
+        this.dead      = false;
     }
 
     static _makeTexture(scene) {
         const g = scene.make.graphics({ add: false });
-        g.fillStyle(0xd8c090); g.fillRect(4, 0, 6, 6);
-        g.fillStyle(0xe0d8c0); g.fillRect(3, 6, 8, 9);
-        g.fillStyle(0x4060a0); g.fillRect(3, 15, 3, 7);
-        g.fillStyle(0x3050a0); g.fillRect(8, 15, 3, 7);
-        g.fillStyle(0xe0d8c0); g.fillRect(0, 7, 3, 7);
-        g.fillStyle(0xe0d8c0); g.fillRect(11, 7, 3, 7);
+        // Head - flesh
+        g.fillStyle(0xe8c080); g.fillRect(3, 0, 8, 7);
+        // Helmet visor - black with teal slit (Doom HUD)
+        g.fillStyle(0x111111); g.fillRect(3, 1, 8, 4);
+        g.fillStyle(0x00ffcc); g.fillRect(4, 2, 6, 2);
+        // Armor body - bright Doomguy green
+        g.fillStyle(0x44cc44); g.fillRect(2, 7, 10, 9);
+        // Chest highlight
+        g.fillStyle(0x66ee66); g.fillRect(3, 7, 8, 3);
+        // Shoulder pads - dark green
+        g.fillStyle(0x226622); g.fillRect(0, 7, 3, 5);
+        g.fillStyle(0x226622); g.fillRect(11, 7, 3, 5);
+        // Arms
+        g.fillStyle(0x44cc44); g.fillRect(0, 12, 3, 4);
+        g.fillStyle(0x44cc44); g.fillRect(11, 12, 3, 4);
+        // Legs
+        g.fillStyle(0x1a4a1a); g.fillRect(2, 16, 4, 6);
+        g.fillStyle(0x1a4a1a); g.fillRect(8, 16, 4, 6);
+        // Boots
+        g.fillStyle(0x333333); g.fillRect(2, 19, 4, 3);
+        g.fillStyle(0x333333); g.fillRect(8, 19, 4, 3);
         g.generateTexture('player', 14, 22); g.destroy();
     }
 
-    // enemies = array of Bot (or any entity with .active, .x, .y, .takeDamage, .alive)
     update(delta, keys, enemies, effects) {
+        if (this.dead) return;
+
         const body      = this.sprite.body;
         const onGround  = body.blocked.down;
         const onLeft    = body.blocked.left;
@@ -137,12 +157,9 @@ class Player {
             this.attacking = true;
             this.atkTimer  = this.weaponDef.atkDur;
             this.atkCd     = this.weaponDef.atkCd;
-
-            // Scythe: burn gauge on swing
             if (this.weaponDef.gaugeCost) {
                 this.gauge = Math.max(0, this.gauge - this.weaponDef.gaugeCost);
             }
-            // Sword air lunge
             if (this.weaponDef.id === 'sword' && !onGround)
                 body.setVelocityX(this.facing * this.weaponDef.lungeVel);
         }
@@ -166,13 +183,17 @@ class Player {
         // TINT
         this.sprite.setFlipX(this.facing === -1);
         if      (this.slamming)    this.sprite.setTint(0xff8800);
-        else if (this.wallSliding) this.sprite.setTint(0x88aaff);
+        else if (this.wallSliding) this.sprite.setTint(0x88ffff);
         else if (this.sliding)     this.sprite.setTint(0xaaffaa);
-        else if (this.dashing)     this.sprite.setTint(0xffaa22);
-        else if (this.gauge > 80)  this.sprite.setTint(0xff5522);
+        else if (this.dashing)     this.sprite.setTint(0xffffff);
+        else if (this.gauge > 80)  this.sprite.setTint(0xffdd00);
         else                       this.sprite.clearTint();
 
-        if (this.sprite.y > C.LAVA_Y) this.scene.events.emit('playerDied');
+        // LAVA DEATH
+        if (this.sprite.y > C.LAVA_Y && !this.dead) {
+            this.dead = true;
+            this.scene.events.emit('playerDied');
+        }
     }
 
     _drawWeapon(enemies, effects, onGround) {
@@ -188,17 +209,13 @@ class Player {
             const tipX  = px + Math.cos(ang) * wpn.radius;
             const tipY  = py + Math.sin(ang) * (wpn.radius * 0.7);
 
-            // Scythe gets a wider, more dramatic arc with handle line
             if (wpn.id === 'scythe') {
-                // Handle
                 this.swordGfx.lineStyle(3, 0x886622, 0.9);
                 this.swordGfx.lineBetween(px, py + 4, px - this.facing * 18, py + 16);
-                // Blade arc - two layers
                 this.swordGfx.lineStyle(4, wpn.swingCol, 0.95);
                 this.swordGfx.beginPath();
                 this.swordGfx.arc(px, py, wpn.radius, baseA, ang, this.facing !== 1);
                 this.swordGfx.strokePath();
-                // Inner glow arc
                 if (this.gauge > 30) {
                     this.swordGfx.lineStyle(8, wpn.glowCol, 0.15);
                     this.swordGfx.beginPath();
@@ -219,27 +236,23 @@ class Player {
                 }
             }
 
-            // Tip dot
-            this.swordGfx.fillStyle(0xffffff, 0.8);
+            this.swordGfx.fillStyle(0xffffff, 0.9);
             this.swordGfx.fillCircle(tipX, tipY, 2 + this.gauge * 0.025);
 
-            // Axe glow
             if (wpn.id === 'axe' && this.axeHitGlow > 0) {
                 const gl = Math.min(1, this.axeHitGlow / 400);
-                const sw = (3) + this.gauge * 0.035;
+                const sw = 3 + this.gauge * 0.035;
                 this.swordGfx.lineStyle(sw + 5, wpn.glowCol, gl * 0.35);
                 this.swordGfx.beginPath();
                 this.swordGfx.arc(px, py, wpn.radius + 6, baseA, ang, this.facing !== 1);
                 this.swordGfx.strokePath();
             }
 
-            // Hit detection — slightly generous hitbox (tip + mid-arc point)
             if (this.hitCd <= 0) {
-                const midAng  = baseA + sweep * (prog * 0.5);
-                const midX    = px + Math.cos(midAng) * wpn.radius * 0.7;
-                const midY    = py + Math.sin(midAng) * wpn.radius * 0.5;
-                const hitRad  = wpn.radius + 6;
-
+                const midAng = baseA + sweep * (prog * 0.5);
+                const midX   = px + Math.cos(midAng) * wpn.radius * 0.7;
+                const midY   = py + Math.sin(midAng) * wpn.radius * 0.5;
+                const hitRad = wpn.radius + 6;
                 enemies.forEach(d => {
                     if (!d.active) return;
                     const distTip = Phaser.Math.Distance.Between(tipX, tipY, d.x, d.y);
@@ -251,10 +264,7 @@ class Player {
                         if (hit) {
                             this.hitCd = 90;
                             this._onHit(dmg, d.x, d.y, effects);
-                            // Scythe: kill resets cooldown
-                            if (wpn.id === 'scythe' && !d.alive) {
-                                this.atkCd = 0;
-                            }
+                            if (wpn.id === 'scythe' && !d.alive) this.atkCd = 0;
                         }
                     }
                 });
@@ -266,7 +276,6 @@ class Player {
             this.swordGfx.fillStyle(wpn.swingCol, 1);
             this.swordGfx.fillRect(px - 8, py - 32, 16, 8);
         } else {
-            // Idle weapon
             const idleA = this.facing === 1 ? 0.5 : Math.PI - 0.5;
             const col   = wpn.id === 'axe' && this.axeHitGlow > 100 ? wpn.glowCol : wpn.swingCol;
             if (wpn.id === 'scythe') {
